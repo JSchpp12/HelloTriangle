@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include <vector>
+#include <optional>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -22,6 +23,8 @@ private:
     GLFWwindow* window;
     VkInstance instance;
 
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
@@ -29,14 +32,23 @@ private:
         "VK_LAYER_KHRONOS_validation"
     };
 
-#ifdef NDEBUG 
-    const bool enableValidationLayers = false;
-#else
-    const bool enableValidationLayers = true;
-#endif
+    #ifdef NDEBUG 
+        const bool enableValidationLayers = false;
+    #else
+        const bool enableValidationLayers = true;
+    #endif
+
+    struct QueueFamilyIndices {
+        std::optional<uint32_t> graphicsFamily; 
+
+        bool isComplete() {
+            return graphicsFamily.has_value(); 
+        }
+    };
 
     void initVulkan() {
         createInstance();
+        pickPhysicalDevice(); 
     }
 
     void initWindow() {
@@ -160,6 +172,72 @@ private:
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create instance!");
         }
+    }
+
+    void pickPhysicalDevice() {
+        uint32_t deviceCount = 0; 
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr); 
+        if (deviceCount == 0) {
+            throw std::runtime_error("failed to find GPUs with Vulkan support!"); 
+        }
+
+        std::vector<VkPhysicalDevice> devices(deviceCount); 
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()); 
+        
+        //check devices and see if they are suitable for use
+        for (const auto& device : devices) {
+            if (isDeviceSuitable(device)) {
+                physicalDevice = device; 
+                break; 
+            }
+        }
+        
+        if (physicalDevice == VK_NULL_HANDLE) {
+            throw std::runtime_error("failed to find suitable GPU!"); 
+        }
+    }
+
+
+    //Check if the given physical device is suitable for vulkan use
+    bool isDeviceSuitable(VkPhysicalDevice device) {
+        /*
+            Method of querying specific information about a device and checking if that device features support for a geometryShader
+            VkPhysicalDeviceProperties deviceProperties; 
+            VkPhysicalDeviceFeatures deviceFeatures; 
+
+            vkGetPhysicalDeviceProperties(device, &deviceProperties); 
+            vkGetPhysicalDeviceFeatures(device, &deviceFeatures); 
+
+            return deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceFeatures.geometryShader;
+        */
+
+        QueueFamilyIndices indicies = findQueueFamilies(device); 
+        return indicies.graphicsFamily.has_value();
+
+    }
+
+    /*
+        Find what queues are available for the device 
+        Queues support different types of commands such as: processing compute commands or memory transfer commands
+    */
+    QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+        uint32_t queueFamilyCount = 0; 
+        QueueFamilyIndices indicies; 
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr); 
+
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount); 
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data()); 
+
+        //need to find a graphicsQueue that supports VK_QUEUE_GRAPHICS_BIT 
+        int i = 0; 
+        for (const auto& queueFamily : queueFamilies) {
+            if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indicies.graphicsFamily = i; 
+            }
+            i++; 
+        }
+
+        return indicies; 
     }
 };
 
