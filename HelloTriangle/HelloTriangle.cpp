@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <optional>
+#include <set>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -21,10 +22,12 @@ public:
 
 private:
     VkQueue graphicsQueue; 
+    VkQueue presentQueue; 
     GLFWwindow* window;
     VkInstance instance;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device; 
+    VkSurfaceKHR surface; 
 
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
@@ -41,15 +44,17 @@ private:
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
+        std::optional<uint32_t> presentFamily; 
 
         bool isComplete() {
-            return graphicsFamily.has_value();
+            return graphicsFamily.has_value() && presentFamily.has_value(); 
         }
     }; 
 
 
     void initVulkan() {
         createInstance();
+        createSurface(); 
         pickPhysicalDevice(); 
         createLogicalDevice(); 
     }
@@ -74,10 +79,17 @@ private:
 
     void cleanup() {
         vkDestroyDevice(device, nullptr); 
+        vkDestroySurfaceKHR(instance, surface, nullptr); 
         vkDestroyInstance(instance, nullptr);
         glfwDestroyWindow(window);
 
         glfwTerminate();
+    }
+
+    void createSurface() {
+        if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create window surface"); 
+        }
     }
 
     bool checkValidationLayerSupport() {
@@ -235,9 +247,19 @@ private:
         //need to find a graphicsQueue that supports VK_QUEUE_GRAPHICS_BIT 
         int i = 0; 
         for (const auto& queueFamily : queueFamilies) {
+            VkBool32 presentSupport = false; 
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport); 
+
+            //pick the family that supports presenting to the display 
+            if (presentSupport) {
+                indicies.presentFamily = i; 
+            }
+            //pick family that has graphics support
             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indicies.graphicsFamily = i; 
             }
+
+            //--COULD DO :: pick a device that supports both of these in the same queue for increased performance--
             i++; 
         }
 
@@ -249,15 +271,21 @@ private:
         float queuePrioriy = 1.0f;
         QueueFamilyIndices indicies = findQueueFamilies(physicalDevice); 
 
-        //create a struct to contain the information required 
-        //create a queue with graphics capabilities
-        VkDeviceQueueCreateInfo  queueCreateInfo{}; 
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; 
-        queueCreateInfo.queueFamilyIndex = indicies.graphicsFamily.value(); 
+        //need multiple structs since we now have a seperate family for presenting and graphics 
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos; 
+        std::set<uint32_t> uniqueQueueFamilies = { indicies.graphicsFamily.value(), indicies.presentFamily.value() }; 
 
-        //most drivers support only a few queue per queueFamily 
-        queueCreateInfo.queueCount = 1; 
-        queueCreateInfo.pQueuePriorities = &queuePrioriy; 
+        for (uint32_t queueFamily : uniqueQueueFamilies) {
+            //create a struct to contain the information required 
+            //create a queue with graphics capabilities
+            VkDeviceQueueCreateInfo  queueCreateInfo{};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = queueFamily; 
+            //most drivers support only a few queue per queueFamily 
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &queuePrioriy;
+            queueCreateInfos.push_back(queueCreateInfo); 
+        }
 
         //specifying device features that we want to use -- can pull any of the device features that was queried before...for now use nothing
         VkPhysicalDeviceFeatures deviceFeatures{};
@@ -265,8 +293,8 @@ private:
         //Create actual logical device
         VkDeviceCreateInfo createInfo{}; 
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO; 
-        createInfo.pQueueCreateInfos = &queueCreateInfo; 
-        createInfo.queueCreateInfoCount = 1; 
+        createInfo.pQueueCreateInfos = queueCreateInfos.data(); 
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()); 
         createInfo.pEnabledFeatures = &deviceFeatures; 
 
         //specify specific instance info but it is device specific this time
@@ -286,6 +314,7 @@ private:
         }
 
         vkGetDeviceQueue(device, indicies.graphicsFamily.value(), 0, &graphicsQueue); 
+        vkGetDeviceQueue(device, indicies.presentFamily.value(), 0, &presentQueue);
     }
 };
 
