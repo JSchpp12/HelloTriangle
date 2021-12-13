@@ -34,6 +34,7 @@ void HelloTriangleApplication::initVulkan() {
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapChain();
+    createImageViews(); 
     std::cout << "Finished \n";
 }
 
