@@ -49,6 +49,8 @@ private:
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
 
+    std::vector<VkImageView> swapChainImageViews; 
+
     const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
     };
@@ -112,5 +114,11 @@ private:
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes); 
 
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities); 
+
+    /// <summary>
+    /// Create an image view object for use in the rendering pipeline
+    /// 'Image View' -> describes how to access an image and what part of an image to access
+    /// </summary>
+    void createImageViews(); 
 };
 
