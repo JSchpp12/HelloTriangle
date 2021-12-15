@@ -36,6 +36,7 @@ private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
+    VkPipeline graphicsPipeline; 
     VkRenderPass renderPass; 
     VkPipelineLayout pipelineLayout;
     VkQueue graphicsQueue;

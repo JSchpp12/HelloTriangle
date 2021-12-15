@@ -7,6 +7,7 @@ void HelloTriangleApplication::mainLoop() {
 }
 
 void HelloTriangleApplication::cleanup() {
+    vkDestroyPipeline(device, graphicsPipeline, nullptr); 
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr); 
     vkDestroyRenderPass(device, renderPass, nullptr); 
     //destroy image views 
@@ -37,6 +38,7 @@ void HelloTriangleApplication::initVulkan() {
     createLogicalDevice();
     createSwapChain();
     createImageViews(); 
+    createRenderPass(); 
     createGraphicsPipeline(); 
     std::cout << "Finished \n";
 }
@@ -672,10 +674,10 @@ void HelloTriangleApplication::createGraphicsPipeline() {
         VK_DYNAMIC_STATE_LINE_WIDTH
     }; 
     
-    VkPipelineDynamicStateCreateInfo dynamicState{}; 
-    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO; 
-    dynamicState.dynamicStateCount = 2; 
-    dynamicState.pDynamicStates = dynamicStates; 
+    VkPipelineDynamicStateCreateInfo dynamicStateInfo{}; 
+    dynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicStateInfo.dynamicStateCount = 2;
+    dynamicStateInfo.pDynamicStates = dynamicStates;
 
     /* Pipeline Layout */
     //uniform values in shaders need to be defined here 
@@ -688,6 +690,35 @@ void HelloTriangleApplication::createGraphicsPipeline() {
 
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("failed to create pipeline layout"); 
+    }
+
+    /* Pipeline */
+    VkGraphicsPipelineCreateInfo pipelineInfo{}; 
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO; 
+    pipelineInfo.stageCount = 2; 
+    pipelineInfo.pStages = shaderStages; 
+    //ref all previously created structs
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = nullptr; // Optional
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = nullptr; // Optional
+    pipelineInfo.layout = pipelineLayout;
+    //render pass info 
+    //  ensure renderpass is compatible with pipeline --check khronos docs
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0; //index where the graphics pipeline will be used 
+    //allow switching to new pipeline (inheritance) 
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional -- handle to existing pipeline that is being switched to
+    pipelineInfo.basePipelineIndex = -1; // Optional
+
+    //finally creating the pipeline -- this call has the capability of creating multiple pipelines in one call
+    //2nd arg is set to null -> normally for graphics pipeline cache (can be used to store and reuse data relevant to pipeline creation across multiple calls to vkCreateGraphicsPipeline)
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create graphics pipeline"); 
     }
 
     //destroy the shader modules that were created 
@@ -747,7 +778,6 @@ void HelloTriangleApplication::createRenderPass() {
     subpass.pColorAttachments = &colorAttachmentRef; 
 
     /* Render Pass */
-    // 
     VkRenderPassCreateInfo renderPassInfo{}; 
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO; 
     renderPassInfo.attachmentCount = 1; 
