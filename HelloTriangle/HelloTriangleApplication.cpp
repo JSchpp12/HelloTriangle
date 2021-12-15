@@ -492,11 +492,6 @@ void HelloTriangleApplication::createImageViews() {
     }
 }
 
-void HelloTriangleApplication::createGraphicsPipeline() {
-    auto vertShaderCode = readFile("Shaders/fragShader_1.spv"); 
-    auto fragShaderCode = readFile("Shaders/vertShader_1.spv"); 
-}
-
 VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<char>& code) {
     VkShaderModuleCreateInfo createInfo{}; 
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO; 

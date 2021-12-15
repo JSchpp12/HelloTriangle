@@ -152,7 +152,7 @@ private:
     void createImageViews(); 
 
     /// <summary>
-    /// Create a graphics pipeline to handle the needs for the application. The pipeline is immutable so it must be created if any changes are needed.
+    /// Create a graphics pipeline to handle the needs for the application with the vertex and fragment shaders. The pipeline is immutable so it must be created if any changes are needed.
     /// </summary>
     void createGraphicsPipeline(); 
 
@@ -162,11 +162,6 @@ private:
     /// <param name="code">bytecode for the shader program</param>
     /// <returns></returns>
     VkShaderModule createShaderModule(const std::vector<char>& code); 
-
-    /// <summary>
-    /// Construct the graphics pipeline with the vertex and fragment shaders
-    /// </summary>
-    void createGraphicsPipeline(); 
 
     /// <summary>
     /// Create a rendering pass object which will tell vulkan information about framebuffer attachments:
