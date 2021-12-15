@@ -54,6 +54,7 @@ private:
     VkExtent2D swapChainExtent;
 
     std::vector<VkImageView> swapChainImageViews; 
+    std::vector<VkFramebuffer> swapChainFramebuffers; 
 
     const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
@@ -169,6 +170,11 @@ private:
     /// number of color and depth buffers, how many samples to use for each, how to handle contents
     /// </summary>
     void createRenderPass(); 
+    
+    /// <summary>
+    /// Create framebuffers that will hold representations of the images in the swapchain
+    /// </summary>
+    void createFramebuffers(); 
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
