@@ -36,6 +36,11 @@ private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
+    //vulkan command storage
+    VkCommandPool commandPool;
+    std::vector<VkCommandBuffer> commandBuffers; 
+
+    //pipeline and dependency storage
     VkPipeline graphicsPipeline; 
     VkRenderPass renderPass; 
     VkPipelineLayout pipelineLayout;
@@ -126,10 +131,10 @@ private:
     */
     bool checkDeviceExtensionSupport(VkPhysicalDevice device); 
 
-    /*
-        Find what queues are available for the device
-        Queues support different types of commands such as: processing compute commands or memory transfer commands
-    */
+    /// <summary>
+    /// Find what queues are available for the device
+    /// Queues support different types of commands such as : processing compute commands or memory transfer commands
+    /// </summary>  
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
     //Create a logical device to communicate with the physical device 
@@ -175,6 +180,16 @@ private:
     /// Create framebuffers that will hold representations of the images in the swapchain
     /// </summary>
     void createFramebuffers(); 
+
+    /// <summary>
+    /// Create command pools which will contain all predefined draw commands for later use in vulkan main loop
+    /// </summary>
+    void createCommandPool(); 
+
+    /// <summary>
+    /// Allocate and record the commands for each swapchain image
+    /// </summary>
+    void createCommandBuffers(); 
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
