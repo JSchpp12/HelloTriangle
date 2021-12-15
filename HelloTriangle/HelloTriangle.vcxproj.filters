@@ -13,6 +13,10 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{5315c303-d04d-44bf-926c-0b485e67d187}</UniqueIdentifier>
+      <Extensions>frag;vert;</Extensions>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HelloTriangle.cpp">
@@ -26,5 +30,25 @@
     <ClInclude Include="HelloTriangleApplication.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\fragShader_1.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\fragShader_1.spv">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\fragShader_2.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\vertShader_1.spv">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\vertShader_1.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="shaders\vertShader_2.vert">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
