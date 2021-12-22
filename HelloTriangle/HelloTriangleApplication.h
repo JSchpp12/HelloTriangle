@@ -36,6 +36,8 @@ private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
+    bool frameBufferResized = false; //explicit declaration of resize, used if driver does not trigger VK_ERROR_OUT_OF_DATE
+
     //how many frames will be sent through the pipeline
     const int MAX_FRAMES_IN_FLIGHT = 2; 
 
@@ -115,6 +117,11 @@ private:
     void cleanup();
 
     /// <summary>
+    /// Clean up objects used by the swap chain.
+    /// </summary>
+    void cleanupSwapChain(); 
+
+    /// <summary>
     /// Set up vulkan
     /// </summary>
     void initVulkan(); 
@@ -123,6 +130,11 @@ private:
     /// Create a swap chain that will be used in rendering images
     /// </summary>
     void createSwapChain(); 
+
+    /// <summary>
+    /// If the swapchain is no longer compatible, it must be recreated.
+    /// </summary>
+    void recreateSwapChain(); 
 
     /// <summary>
     /// Create the window structure that will be used to contain images from the swapchain
@@ -242,6 +254,16 @@ private:
         file.close(); 
         return buffer; 
     }
+
+    /// <summary>
+    /// Callback function that is called by GLFW when the window is resized
+    /// </summary>
+    static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+        //retreive the pointer to the instance of the class that was created in initWindow() -> glfwSetWindowUserPointer
+        auto app = reinterpret_cast<HelloTriangleApplication*>(glfwGetWindowUserPointer(window)); 
+        app->frameBufferResized = true; 
+    }
+
 #pragma region Unused Functions
     //VkPipelineColorBlendAttachmentState createAlphaColorBlending();
 #pragma endregion

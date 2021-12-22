@@ -30,12 +30,27 @@ void HelloTriangleApplication::drawFrame() {
     // 4. timeout 
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
+    VkResult result; //swapchain status
+
     /* Get Image From Swapchain */
-    uint32_t imageIndex; 
+    uint32_t imageIndex;
 
     //as is extension we must use vk*KHR naming convention
     //UINT64_MAX -> 3rd argument: used to specify timeout in nanoseconds for image to become available
-    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    /* Suboptimal SwapChain notes */
+        //vulkan can return two different flags 
+        // 1. VK_ERROR_OUT_OF_DATE_KHR: swap chain has become incompatible with the surface and cant be used for rendering. (Window resize)
+        // 2. VK_SUBOPTIMAL_KHR: swap chain can still be used to present to the surface, but the surface properties no longer match
+    result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        //the swapchain is no longer optimal according to vulkan. Must recreate a more efficient swap chain
+        recreateSwapChain(); 
+        return; 
+    }
+    else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        //for VK_SUBOPTIMAL_KHR can also recreate swap chain. However, chose to continue to presentation stage
+        throw std::runtime_error("failed to aquire swap chain image");
+    }
 
     //check if a previous frame is using the current image
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
@@ -92,16 +107,23 @@ void HelloTriangleApplication::drawFrame() {
     presentInfo.pResults = nullptr; // Optional
 
     //make call to present image
-    vkQueuePresentKHR(presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
-    //wait until the submission is actually complete before return
-    vkQueueWaitIdle(presentQueue); 
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || frameBufferResized) {
+        frameBufferResized = false; 
+        recreateSwapChain(); 
+    }
+    else if (result != VK_SUCCESS) {
+        throw std::runtime_error("failed to present swap chain image");
+    }
 
     //advance to next frame
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT; 
 }
 
 void HelloTriangleApplication::cleanup() {
+    cleanupSwapChain(); 
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
         vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -109,27 +131,34 @@ void HelloTriangleApplication::cleanup() {
     }
 
     vkDestroyCommandPool(device, commandPool, nullptr); 
-
-    //delete framebuffers 
-    for (auto framebuffer : swapChainFramebuffers) {
-        vkDestroyFramebuffer(device, framebuffer, nullptr); 
-    }
     
-    vkDestroyPipeline(device, graphicsPipeline, nullptr); 
-    vkDestroyPipelineLayout(device, pipelineLayout, nullptr); 
-    vkDestroyRenderPass(device, renderPass, nullptr); 
-    //destroy image views 
-    for (auto imageView : swapChainImageViews) {
-        vkDestroyImageView(device, imageView, nullptr); 
-    }
-
-    vkDestroySwapchainKHR(device, swapChain, nullptr);
     vkDestroyDevice(device, nullptr);
+
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
     glfwDestroyWindow(window);
 
     glfwTerminate();
+}
+
+void HelloTriangleApplication::cleanupSwapChain() {
+    //delete framebuffers 
+    for (auto framebuffer : swapChainFramebuffers) {
+        vkDestroyFramebuffer(device, framebuffer, nullptr);
+    }
+
+    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data()); 
+
+    vkDestroyPipeline(device, graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    vkDestroyRenderPass(device, renderPass, nullptr);
+
+    //destroy image views 
+    for (auto imageView : swapChainImageViews) {
+        vkDestroyImageView(device, imageView, nullptr);
+    }
+
+    vkDestroySwapchainKHR(device, swapChain, nullptr);
 }
 
 void HelloTriangleApplication::run() {
@@ -173,9 +202,16 @@ void HelloTriangleApplication::initWindow() {
 
     //create a window, 3rd argument allows selection of monitor, 4th argument only applies to openGL
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+
+    //need to give GLFW a pointer to current instance of this class
+    glfwSetWindowUserPointer(window, this); 
+
+    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback); 
 }
 
 void HelloTriangleApplication::createSwapChain() {
+    //TODO: current implementation requires halting to all rendering when recreating swapchain. Can place old swap chain in oldSwapChain field 
+    //  in order to prevent this and allow rendering to continue
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
 
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -248,6 +284,36 @@ void HelloTriangleApplication::createSwapChain() {
     //save swapChain information for later use
     swapChainImageFormat = surfaceFormat.format;
     swapChainExtent = extent;
+}
+
+void HelloTriangleApplication::recreateSwapChain() {
+    int width = 0, height = 0; 
+    //check for window minimization and wait for window size to no longer be 0
+    glfwGetFramebufferSize(window, &width, &height); 
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(window, &width, &height); 
+        glfwWaitEvents(); 
+    }
+    //wait for device to finish any current actions
+    vkDeviceWaitIdle(device); 
+
+    cleanupSwapChain(); 
+
+    //create swap chain itself 
+    createSwapChain(); 
+
+    //image views depend directly on swap chain images so these need to be recreated
+    createImageViews(); 
+
+    //render pass depends on the format of swap chain images
+    createRenderPass(); 
+
+    //viewport and scissor rectangle size are declared during pipeline creation, so the pipeline must be recreated
+    //can use dynamic states for viewport and scissor to avoid this 
+    createGraphicsPipeline(); 
+
+    createFramebuffers(); 
+    createCommandBuffers(); 
 }
 
 bool HelloTriangleApplication::checkValidationLayerSupport() {
