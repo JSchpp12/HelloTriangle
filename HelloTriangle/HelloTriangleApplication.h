@@ -36,6 +36,10 @@ private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
+    //Sync obj storage 
+    VkSemaphore imageAvailable; 
+    VkSemaphore renderFinished; 
+
     //vulkan command storage
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers; 
@@ -93,6 +97,11 @@ private:
     void mainLoop();
 
     /// <summary>
+    /// Make the calls to draw a frame 
+    /// </summary>
+    void drawFrame();
+
+    /// <summary>
     /// Vulkan requires that explicitly created objects be destroyed as these will not be destroyed automatically. This handles that step. 
     /// </summary>
     void cleanup();
@@ -140,9 +149,9 @@ private:
     //Create a logical device to communicate with the physical device 
     void createLogicalDevice(); 
 
-    /*
-        Request specific details about swap chain support for a given device
-    */
+    /// <summary>
+    /// Request specific details about swap chain support for a given device
+    /// </summary>
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats); 
@@ -190,6 +199,11 @@ private:
     /// Allocate and record the commands for each swapchain image
     /// </summary>
     void createCommandBuffers(); 
+
+    /// <summary>
+    /// Create semaphores that are going to be used to sync rendering and presentation queues
+    /// </summary>
+    void createSemaphores(); 
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);

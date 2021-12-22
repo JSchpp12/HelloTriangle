@@ -35,13 +35,7 @@
     <None Include="shaders\fragShader_1.frag">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="shaders\fragShader_1.spv">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="shaders\fragShader_2.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\vertShader_1.spv">
       <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\vertShader_1.vert">

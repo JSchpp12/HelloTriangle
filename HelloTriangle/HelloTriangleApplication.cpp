@@ -3,10 +3,89 @@
 void HelloTriangleApplication::mainLoop() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        drawFrame(); 
     }
+
+    //wait until the device is complete with all drawing operations before cleanup
+    vkDeviceWaitIdle(device); 
+}
+
+void HelloTriangleApplication::drawFrame() {
+    /* Goals of each call to drawFrame: 
+    *   get an image from the swap chain
+    *   execute command buffer with that image as attachment in the framebuffer
+    *   return the image to swapchain for presentation 
+    * by default each of these steps would be executed asynchronously so need method of synchronizing calls with rendering
+    * two ways of doing this: 
+    *   1. fences
+    *       accessed through calls to vkWaitForFences
+    *       designed to synchronize appliecation itself with rendering ops 
+    *   2. semaphores 
+    *       designed to synchronize opertaions within or across command queues 
+    * need to sync queu operations of draw and presentation commmands -> using semaphores
+    */ 
+
+    /* Get Image From Swapchain */
+    uint32_t imageIndex; 
+
+    //as is extension we must use vk*KHR naming convention
+    //UINT64_MAX -> 3rd argument: used to specify timeout in nanoseconds for image to become available
+    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex); 
+
+    /* Command Buffer */
+    VkSubmitInfo submitInfo{}; 
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO; 
+
+    VkSemaphore waitSemaphores[] = { imageAvailable };
+
+    //where in the pipeline should the wait happen, want to wait until image becomes available
+    //wait at stage of color attachment -> theoretically allows for shader execution before wait 
+    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //each entry corresponds through index to waitSemaphores[]
+    submitInfo.waitSemaphoreCount = 1; 
+    submitInfo.pWaitSemaphores = waitSemaphores; 
+    submitInfo.pWaitDstStageMask = waitStages; 
+
+    //which command buffers to submit for execution -- should submit command buffer that binds the swap chain image that was just acquired as color attachment
+    submitInfo.commandBufferCount = 1; 
+    submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; 
+
+    //what semaphores to signal when command buffers have finished
+    VkSemaphore signalSemaphores[] = { renderFinished };
+
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        throw std::runtime_error("failed to submit draw command buffer"); 
+    }
+
+    /* Presentation */
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    //what to wait for 
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    //what swapchains to present images to 
+    VkSwapchainKHR swapChains[] = { swapChain };
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &imageIndex;
+
+    //can use this to get results from swap chain to check if presentation was successful
+    presentInfo.pResults = nullptr; // Optional
+
+    //make call to present image
+    vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    //wait until the submission is actually complete before return
+    vkQueueWaitIdle(presentQueue); 
 }
 
 void HelloTriangleApplication::cleanup() {
+    vkDestroySemaphore(device, renderFinished, nullptr); 
+    vkDestroySemaphore(device, imageAvailable, nullptr); 
     vkDestroyCommandPool(device, commandPool, nullptr); 
 
     //delete framebuffers 
@@ -50,6 +129,7 @@ void HelloTriangleApplication::initVulkan() {
     createFramebuffers(); 
     createCommandPool(); 
     createCommandBuffers(); 
+    createSemaphores(); 
     std::cout << "Finished \n";
 }
 
@@ -520,8 +600,12 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
 
 void HelloTriangleApplication::createGraphicsPipeline() {
     //create the shader modules needed in constructing the overall pipeline
-    auto vertShaderCode = readFile("shaders/vertShader_1.spv"); 
-    auto fragShaderCode = readFile("shaders/fragShader_1.spv"); 
+    //auto vertShaderCode = readFile("shaders/vertShader_1.spv"); 
+    //auto fragShaderCode = readFile("shaders/fragShader_1.spv"); 
+
+    //more colors! 
+    auto vertShaderCode = readFile("shaders/vertShader_2.spv");
+    auto fragShaderCode = readFile("shaders/fragShader_2.spv");
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode); 
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode); 
@@ -619,7 +703,7 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     //2. VK_POLYGON_MODE_LINE: polygon edges are drawn as lines 
     //3. VK_POLYGON_MODE_POINT: polygon verticies are drawn as points
     //NOTE: using any other than fill, requires GPU feature
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL; 
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 
     //available line widths, depend on GPU. If above 1.0f, required wideLines GPU feature
     rasterizer.lineWidth = 1.0f; //measured in fragment widths
@@ -795,6 +879,18 @@ void HelloTriangleApplication::createRenderPass() {
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass; 
 
+    /* Subpass Dependencies */
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("failed to create render pass"); 
     }
@@ -937,6 +1033,15 @@ void HelloTriangleApplication::createCommandBuffers() {
         if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer"); 
         }
+    }
+}
+
+void HelloTriangleApplication::createSemaphores() {
+    VkSemaphoreCreateInfo semaphoreInfo{}; 
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO; 
+
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailable) != VK_SUCCESS || vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinished)) {
+        throw std::runtime_error("failed to create semaphores"); 
     }
 }
 
