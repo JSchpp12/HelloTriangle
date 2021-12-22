@@ -36,9 +36,15 @@ private:
     const uint32_t WIDTH = 800;
     const uint32_t HEIGHT = 600;
 
+    //how many frames will be sent through the pipeline
+    const int MAX_FRAMES_IN_FLIGHT = 2; 
+
+    //tracker for which frame is being processed of the available permitted frames
+    size_t currentFrame = 0; 
+
     //Sync obj storage 
-    VkSemaphore imageAvailable; 
-    VkSemaphore renderFinished; 
+    std::vector<VkSemaphore> imageAvailableSemaphores; 
+    std::vector<VkSemaphore> renderFinishedSemaphores; 
 
     //vulkan command storage
     VkCommandPool commandPool;
@@ -64,6 +70,8 @@ private:
 
     std::vector<VkImageView> swapChainImageViews; 
     std::vector<VkFramebuffer> swapChainFramebuffers; 
+    std::vector<VkFence> inFlightFences; 
+    std::vector<VkFence> imagesInFlight; 
 
     const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
@@ -204,6 +212,16 @@ private:
     /// Create semaphores that are going to be used to sync rendering and presentation queues
     /// </summary>
     void createSemaphores(); 
+
+    /// <summary>
+    /// Fences are needed for CPU-GPU sync. Creates these required objects
+    /// </summary>
+    void createFences(); 
+
+    /// <summary>
+    /// Create tracking information in order to link fences with the swap chain images using 
+    /// </summary>
+    void createFenceImageTracking();
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);

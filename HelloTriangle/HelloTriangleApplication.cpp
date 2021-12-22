@@ -25,18 +25,30 @@ void HelloTriangleApplication::drawFrame() {
     * need to sync queu operations of draw and presentation commmands -> using semaphores
     */ 
 
+    //wait for fence to be ready 
+    // 3. 'VK_TRUE' -> waiting for all fences
+    // 4. timeout 
+    vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+
     /* Get Image From Swapchain */
     uint32_t imageIndex; 
 
     //as is extension we must use vk*KHR naming convention
     //UINT64_MAX -> 3rd argument: used to specify timeout in nanoseconds for image to become available
-    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailable, VK_NULL_HANDLE, &imageIndex); 
+    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+    //check if a previous frame is using the current image
+    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+        vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX); 
+    }
+    //mark image as now being in use by this frame
+    imagesInFlight[imageIndex] = inFlightFences[currentFrame]; 
 
     /* Command Buffer */
     VkSubmitInfo submitInfo{}; 
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO; 
 
-    VkSemaphore waitSemaphores[] = { imageAvailable };
+    VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame]};
 
     //where in the pipeline should the wait happen, want to wait until image becomes available
     //wait at stage of color attachment -> theoretically allows for shader execution before wait 
@@ -50,12 +62,15 @@ void HelloTriangleApplication::drawFrame() {
     submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; 
 
     //what semaphores to signal when command buffers have finished
-    VkSemaphore signalSemaphores[] = { renderFinished };
+    VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame]};
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+    //set fence to unsignaled state
+    vkResetFences(device, 1, &inFlightFences[currentFrame]);
+
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
         throw std::runtime_error("failed to submit draw command buffer"); 
     }
 
@@ -81,11 +96,18 @@ void HelloTriangleApplication::drawFrame() {
 
     //wait until the submission is actually complete before return
     vkQueueWaitIdle(presentQueue); 
+
+    //advance to next frame
+    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT; 
 }
 
 void HelloTriangleApplication::cleanup() {
-    vkDestroySemaphore(device, renderFinished, nullptr); 
-    vkDestroySemaphore(device, imageAvailable, nullptr); 
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+        vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+        vkDestroyFence(device, inFlightFences[i], nullptr);
+    }
+
     vkDestroyCommandPool(device, commandPool, nullptr); 
 
     //delete framebuffers 
@@ -130,6 +152,8 @@ void HelloTriangleApplication::initVulkan() {
     createCommandPool(); 
     createCommandBuffers(); 
     createSemaphores(); 
+    createFences(); 
+    createFenceImageTracking();
     std::cout << "Finished \n";
 }
 
@@ -1037,12 +1061,44 @@ void HelloTriangleApplication::createCommandBuffers() {
 }
 
 void HelloTriangleApplication::createSemaphores() {
+    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT); 
+    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT); 
+
     VkSemaphoreCreateInfo semaphoreInfo{}; 
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO; 
 
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailable) != VK_SUCCESS || vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinished)) {
-        throw std::runtime_error("failed to create semaphores"); 
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS || vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i])) {
+            throw std::runtime_error("failed to create semaphores for a frame");
+        }
     }
+}
+
+void HelloTriangleApplication::createFences() {
+    //note: fence creation can be rolled into semaphore creation. Seperated for understanding
+    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT); 
+
+    VkFenceCreateInfo fenceInfo{}; 
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO; 
+
+    //create the fence in a signaled state 
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; 
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create fence object for a frame"); 
+        }
+    }
+}
+
+void HelloTriangleApplication::createFenceImageTracking() {
+    //note: just like createFences() this too can be wrapped into semaphore creation. Seperated for understanding.
+    
+    //need to ensure the frame that is going to be drawn to, is the one linked to the expected fence.
+    //If, for any reason, vulkan returns an image out of order, we will be able to handle that with this link
+    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+
+    //initially, no frame is using any image so this is going to be created without an explicit link
 }
 
 #pragma region Unused Functions
