@@ -124,6 +124,9 @@ void HelloTriangleApplication::drawFrame() {
 void HelloTriangleApplication::cleanup() {
     cleanupSwapChain(); 
 
+    vkDestroyBuffer(device, vertexBuffer, nullptr); 
+    vkFreeMemory(device, vertexBufferMemory, nullptr); 
+
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
         vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
@@ -179,6 +182,7 @@ void HelloTriangleApplication::initVulkan() {
     createGraphicsPipeline(); 
     createFramebuffers(); 
     createCommandPool(); 
+    createVertexBuffer();
     createCommandBuffers(); 
     createSemaphores(); 
     createFences(); 
@@ -553,6 +557,30 @@ void HelloTriangleApplication::createLogicalDevice() {
     vkGetDeviceQueue(device, indicies.presentFamily.value(), 0, &presentQueue);
 }
 
+uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
+{
+    //query available memory -- right now only concerned with memory type, not the heap that it comes from
+    /*VkPhysicalDeviceMemoryProperties contains: 
+        1. memoryTypes 
+        2. memoryHeaps - distinct memory resources (dedicated VRAM or swap space)
+    */
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties); 
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        //use binary AND to test each bit (Left Shift)
+        //check memory types array for more detailed information on memory capabilities
+            //we need to be able to write to memory, so speficially looking to be able to MAP to the memory to write to it from the CPU -- VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+        //also need VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i; 
+        }
+    }
+
+    throw std::runtime_error("failed to find suitable memory type"); 
+}
+
 HelloTriangleApplication::SwapChainSupportDetails HelloTriangleApplication::querySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details;
     uint32_t formatCount, presentModeCount;
@@ -694,8 +722,14 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     //auto fragShaderCode = readFile("shaders/fragShader_1.spv"); 
 
     //more colors! 
-    auto vertShaderCode = readFile("shaders/vertShader_2.spv");
+    //auto vertShaderCode = readFile("shaders/vertShader_2.spv");
     auto fragShaderCode = readFile("shaders/fragShader_2.spv");
+
+    //vertex buffer 
+    auto vertShaderCode = readFile("shaders/vertShader_3.spv"); 
+
+    auto bindingDescriptions = Vertex::getBindingDescription(); 
+    auto attributeDescriptions = Vertex::getAttributeDescriptions(); 
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode); 
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode); 
@@ -727,10 +761,10 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     
     //pVertexBindingDescriptions and pVertexAttributeDescription -> point to arrays of structs to load vertex data
     //for now: leaving blank as the verticies are hard coded in the shaders
-    vertexInputInfo.vertexBindingDescriptionCount = 0; 
-    vertexInputInfo.pVertexBindingDescriptions = nullptr; //optional 
-    vertexInputInfo.vertexAttributeDescriptionCount = 0; 
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr; //optional
+    vertexInputInfo.vertexBindingDescriptionCount = 1; 
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescriptions; 
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()); 
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data(); 
 
     /*
     VkPipelineInputAssemblyStateCreateInfo -> Describes 2 things: 
@@ -1108,13 +1142,18 @@ void HelloTriangleApplication::createCommandBuffers() {
             //3. pipeline object
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); 
 
+        VkBuffer vertexBuffers[] = { vertexBuffer }; 
+        VkDeviceSize offsets[] = { 0 }; 
+        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets); 
+
+
         //now create call to draw triangle
         //Args:    
             //2. vertexCount: how many verticies to draw
             //3. instanceCount: used for instanced render, use 1 otherwise
             //4. firstVertex: offset in VBO, defines lowest value of gl_VertexIndex
             //5. firstInstance: offset for instanced rendering, defines lowest value of gl_InstanceIndex
-        vkCmdDraw(commandBuffers[i], 3, 1, 0, 0); 
+        vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
         //can now finis render pass
         vkCmdEndRenderPass(commandBuffers[i]); 
@@ -1165,6 +1204,62 @@ void HelloTriangleApplication::createFenceImageTracking() {
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
 
     //initially, no frame is using any image so this is going to be created without an explicit link
+}
+
+void HelloTriangleApplication::createVertexBuffer() {
+    VkBufferCreateInfo bufferInfo{}; 
+
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; 
+    bufferInfo.size = sizeof(vertices[0]) * vertices.size(); //size of buffer in bytes
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //purpose of data in buffer
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffers can be owned by specific queue family or shared between them at the same time. This only used for graphics queue
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create vertex buffer"); 
+    }
+
+    //need to allocate memory for the buffer object
+    /* VkMemoryRequirements: 
+        1. size - number of required bytes in memory
+        2. alignments - offset in bytes where the buffer begins in the allocated region of memory (depends on bufferInfo.useage and bufferInfo.flags)
+        3. memoryTypeBits - bit fied of the memory types that are suitable for the buffer
+    */
+    VkMemoryRequirements memRequirenments; 
+    vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirenments);
+
+    VkMemoryAllocateInfo allocInfo{}; 
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO; 
+    allocInfo.allocationSize = memRequirenments.size; 
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirenments.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); 
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate vertex buffer memory"); 
+    }
+
+    //4th argument: offset within the region of memory. Since memory is allocated specifically for this vertex buffer, the offset is 0
+    //if not 0, required to be divisible by memRequirenments.alignment
+    vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0); 
+
+    /* Filling the vertex buffer */
+    void* data; 
+
+    //access a region of the specified memory recourse defined by an offset and size 
+    //can also specify VK_WHOLE_SIZE to map all memory 
+    //currrently no memory flags available in API (time of writing) so must be set to 0
+    vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data); 
+    memcpy(data, vertices.data(), (size_t)bufferInfo.size); //simply copy data into mapped memory
+    vkUnmapMemory(device, vertexBufferMemory); //unmap memory
+
+    /* Memory Copy Note */
+    //note: driver might not immediately copy the data into the buffer memory, ex: caching
+    //also possible that writes not visible to mapped memory yet
+    //two ways to handle this: 
+        //1. use memory heap that is host coherent (VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+        //2. call vkFlushMappedMemoryRanges after writing tot he mapped memory and then call vkInvalidateMappedMemoryRanges before reading from mapped memory
+    //this project used (1) memory always matches but might lead to slightly worse performance 
+    //Flushing memory ranges or using coherent calls does not mean they are passed to GPU. Vulkan does this in the background and memory is guaranteed to be on
+        //on GPU before next call to vkQueueSubmit
+
 }
 
 #pragma region Unused Functions

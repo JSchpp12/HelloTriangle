@@ -156,8 +156,10 @@
   <ItemGroup>
     <None Include="shaders\fragShader_1.frag" />
     <None Include="shaders\fragShader_2.frag" />
+    <None Include="shaders\fragShader_3.frag" />
     <None Include="shaders\vertShader_1.vert" />
     <None Include="shaders\vertShader_2.vert" />
+    <None Include="shaders\vertShader_3.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
