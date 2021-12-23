@@ -17,6 +17,9 @@
       <UniqueIdentifier>{5315c303-d04d-44bf-926c-0b485e67d187}</UniqueIdentifier>
       <Extensions>frag;vert;</Extensions>
     </Filter>
+    <Filter Include="Compiled Shaders">
+      <UniqueIdentifier>{67f9b036-4a66-4a13-b502-d030954f2355}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HelloTriangle.cpp">
@@ -50,5 +53,13 @@
     <None Include="shaders\fragShader_3.frag">
       <Filter>Shaders</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="vertShader.spv">
+      <Filter>Compiled Shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="fragShader.spv">
+      <Filter>Compiled Shaders</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

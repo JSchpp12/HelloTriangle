@@ -154,12 +154,20 @@
     <ClInclude Include="HelloTriangleApplication.h" />
   </ItemGroup>
   <ItemGroup>
+    <CopyFileToFolders Include="fragShader.spv">
+      <DeploymentContent>false</DeploymentContent>
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
     <None Include="shaders\fragShader_1.frag" />
     <None Include="shaders\fragShader_2.frag" />
     <None Include="shaders\fragShader_3.frag" />
     <None Include="shaders\vertShader_1.vert" />
     <None Include="shaders\vertShader_2.vert" />
     <None Include="shaders\vertShader_3.vert" />
+    <CopyFileToFolders Include="vertShader.spv">
+      <DeploymentContent>false</DeploymentContent>
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

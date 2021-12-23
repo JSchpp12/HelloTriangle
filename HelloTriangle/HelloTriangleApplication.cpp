@@ -187,7 +187,7 @@ void HelloTriangleApplication::initVulkan() {
     createSemaphores(); 
     createFences(); 
     createFenceImageTracking();
-    std::cout << "Finished \n";
+    std::cout << "Finished Vulcan Init \n";
 }
 
 void HelloTriangleApplication::createSurface() {
@@ -717,16 +717,8 @@ VkShaderModule HelloTriangleApplication::createShaderModule(const std::vector<ch
 }
 
 void HelloTriangleApplication::createGraphicsPipeline() {
-    //create the shader modules needed in constructing the overall pipeline
-    //auto vertShaderCode = readFile("shaders/vertShader_1.spv"); 
-    //auto fragShaderCode = readFile("shaders/fragShader_1.spv"); 
-
-    //more colors! 
-    //auto vertShaderCode = readFile("shaders/vertShader_2.spv");
-    auto fragShaderCode = readFile("shaders/fragShader_2.spv");
-
-    //vertex buffer 
-    auto vertShaderCode = readFile("shaders/vertShader_3.spv"); 
+    auto fragShaderCode = readFile("fragShader.spv");
+    auto vertShaderCode = readFile("vertShader.spv");
 
     auto bindingDescriptions = Vertex::getBindingDescription(); 
     auto attributeDescriptions = Vertex::getAttributeDescriptions(); 
