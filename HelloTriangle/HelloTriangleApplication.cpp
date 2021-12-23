@@ -187,7 +187,7 @@ void HelloTriangleApplication::initVulkan() {
     createSemaphores(); 
     createFences(); 
     createFenceImageTracking();
-    std::cout << "Finished Vulcan Init \n";
+    std::cout << "Finished Vulkan Init \n";
 }
 
 void HelloTriangleApplication::createSurface() {
