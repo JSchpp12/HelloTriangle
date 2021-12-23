@@ -697,6 +697,9 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     auto vertShaderCode = readFile("shaders/vertShader_2.spv");
     auto fragShaderCode = readFile("shaders/fragShader_2.spv");
 
+    auto bindingDescriptions = Vertex::getBindingDescription(); 
+    auto attributeDescriptions = Vertex::getAttributeDescriptions(); 
+
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode); 
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode); 
 
@@ -727,10 +730,10 @@ void HelloTriangleApplication::createGraphicsPipeline() {
     
     //pVertexBindingDescriptions and pVertexAttributeDescription -> point to arrays of structs to load vertex data
     //for now: leaving blank as the verticies are hard coded in the shaders
-    vertexInputInfo.vertexBindingDescriptionCount = 0; 
-    vertexInputInfo.pVertexBindingDescriptions = nullptr; //optional 
-    vertexInputInfo.vertexAttributeDescriptionCount = 0; 
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr; //optional
+    vertexInputInfo.vertexBindingDescriptionCount = 1; 
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescriptions; 
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()); 
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data(); 
 
     /*
     VkPipelineInputAssemblyStateCreateInfo -> Describes 2 things: 
