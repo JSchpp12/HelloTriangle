@@ -94,11 +94,17 @@ private:
     };
 
     //both vertex and vert attribute data is contained in one array of verticies == 'interleaving vertex' attributes
-    const std::vector<Vertex> verticies = {
-        {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
-    }; 
+    //const std::vector<Vertex> vertices = {
+    //    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    //    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    //    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    //}; 
+
+    const std::vector<Vertex> vertices = {
+    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    };
 
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
@@ -127,6 +133,10 @@ private:
     //vulkan command storage
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers; 
+
+    //buffer and memory information storage
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexBufferMemory; 
 
     //pipeline and dependency storage
     VkPipeline graphicsPipeline; 
@@ -230,10 +240,10 @@ private:
     void createInstance(); 
     void pickPhysicalDevice(); 
     bool isDeviceSuitable(VkPhysicalDevice device); 
-
-    /*
-            Check if the given device supports required extensions.
-    */
+    
+    /// <summary>
+    /// Check if the given device supports required extensions.
+    /// </summary>
     bool checkDeviceExtensionSupport(VkPhysicalDevice device); 
 
     /// <summary>
@@ -244,6 +254,14 @@ private:
 
     //Create a logical device to communicate with the physical device 
     void createLogicalDevice(); 
+
+    /// <summary>
+    /// Query the GPU for the proper memory type that matches properties defined in passed arguments. 
+    /// </summary>
+    /// <param name="typeFilter">Which bit field of memory types that are suitable</param>
+    /// <param name="properties"></param>
+    /// <returns></returns>
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties); 
 
     /// <summary>
     /// Request specific details about swap chain support for a given device
@@ -310,6 +328,11 @@ private:
     /// Create tracking information in order to link fences with the swap chain images using 
     /// </summary>
     void createFenceImageTracking();
+
+    /// <summary>
+    /// Create a vertex buffer to hold the vertex information that will be passed to the GPU. 
+    /// </summary>
+    void createVertexBuffer(); 
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
