@@ -1,9 +1,23 @@
 #include "HelloTriangleApplication.h"
 
+typedef std::chrono::high_resolution_clock Clock; 
+
 void HelloTriangleApplication::mainLoop() {
+    int frameCount = 0; 
+
+    auto start = Clock::now(); 
+
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
         drawFrame(); 
+        frameCount++; 
+
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count(); 
+        if (duration >= 1000) {
+            std::cout << "Frames: " << frameCount << std::endl; 
+            frameCount = 0; 
+            start = Clock::now(); 
+        }
     }
 
     //wait until the device is complete with all drawing operations before cleanup
@@ -1306,6 +1320,7 @@ void HelloTriangleApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlag
     allocInfo.allocationSize = memRequirenments.size;
     allocInfo.memoryTypeIndex = findMemoryType(memRequirenments.memoryTypeBits, properties);
 
+    //should not call vkAllocateMemory for every object. Bundle objects into one call and use offsets 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate buffer memory");
     }
