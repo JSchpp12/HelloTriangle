@@ -74,7 +74,7 @@ void HelloTriangleApplication::drawFrame() {
 
     //which command buffers to submit for execution -- should submit command buffer that binds the swap chain image that was just acquired as color attachment
     submitInfo.commandBufferCount = 1; 
-    submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; 
+    submitInfo.pCommandBuffers = &graphicsCommandBuffers[imageIndex]; 
 
     //what semaphores to signal when command buffers have finished
     VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame]};
@@ -133,7 +133,8 @@ void HelloTriangleApplication::cleanup() {
         vkDestroyFence(device, inFlightFences[i], nullptr);
     }
 
-    vkDestroyCommandPool(device, commandPool, nullptr); 
+    vkDestroyCommandPool(device, transferCommandPool, nullptr); 
+    vkDestroyCommandPool(device, graphicsCommandPool, nullptr); 
     
     vkDestroyDevice(device, nullptr);
 
@@ -150,7 +151,7 @@ void HelloTriangleApplication::cleanupSwapChain() {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
 
-    vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data()); 
+    vkFreeCommandBuffers(device, graphicsCommandPool, static_cast<uint32_t>(graphicsCommandBuffers.size()), graphicsCommandBuffers.data()); 
 
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -181,7 +182,7 @@ void HelloTriangleApplication::initVulkan() {
     createRenderPass(); 
     createGraphicsPipeline(); 
     createFramebuffers(); 
-    createCommandPool(); 
+    createCommandPools(); 
     createVertexBuffer();
     createCommandBuffers(); 
     createSemaphores(); 
@@ -244,9 +245,9 @@ void HelloTriangleApplication::createSwapChain() {
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //how are these images going to be used? Color attachment since we are rendering to them (can change for postprocessing effects)
 
     QueueFamilyIndices indicies = findQueueFamilies(physicalDevice);
-    uint32_t queueFamilyIndicies[] = { indicies.graphicsFamily.value(), indicies.presentFamily.value() };
+    uint32_t queueFamilyIndicies[] = { indicies.graphicsFamily.value(), indicies.transferFamily.value(), indicies.presentFamily.value() };
 
-    if (indicies.graphicsFamily != indicies.presentFamily) {
+    if (indicies.graphicsFamily != indicies.presentFamily && indicies.presentFamily != indicies.transferFamily) {
         /*need to handle how images will be transferred between different queues
         * so we need to draw images on the graphics queue and then submitting them to the presentation queue
         * Two ways of handling this:
@@ -254,8 +255,14 @@ void HelloTriangleApplication::createSwapChain() {
         * 2. VK_SHARING_MODE_CONCURRENT: images can be used across queue families without explicit ownership
         */
         createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        createInfo.queueFamilyIndexCount = 2;
+        createInfo.queueFamilyIndexCount = 3;
         createInfo.pQueueFamilyIndices = queueFamilyIndicies;
+    }
+    else if (indicies.graphicsFamily != indicies.presentFamily && indicies.presentFamily == indicies.transferFamily) {
+        uint32_t explicitQueueFamilyInd[] = { indicies.graphicsFamily.value(), indicies.presentFamily.value() }; 
+        createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT; 
+        createInfo.queueFamilyIndexCount = 2; 
+        createInfo.pQueueFamilyIndices = queueFamilyIndicies; 
     }
     else {
         //same family is used for graphics and presenting
@@ -498,6 +505,10 @@ HelloTriangleApplication::QueueFamilyIndices HelloTriangleApplication::findQueue
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indicies.graphicsFamily = i;
         }
+        else if (queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) {
+            //for transfer family, pick family that does not support graphics but does support transfer queue
+            indicies.transferFamily = i; 
+        }
 
         //--COULD DO :: pick a device that supports both of these in the same queue for increased performance--
         i++;
@@ -512,7 +523,7 @@ void HelloTriangleApplication::createLogicalDevice() {
 
     //need multiple structs since we now have a seperate family for presenting and graphics 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = { indicies.graphicsFamily.value(), indicies.presentFamily.value() };
+    std::set<uint32_t> uniqueQueueFamilies = { indicies.graphicsFamily.value(), indicies.presentFamily.value(), indicies.transferFamily.value() };
 
     for (uint32_t queueFamily : uniqueQueueFamilies) {
         //create a struct to contain the information required 
@@ -555,6 +566,7 @@ void HelloTriangleApplication::createLogicalDevice() {
 
     vkGetDeviceQueue(device, indicies.graphicsFamily.value(), 0, &graphicsQueue);
     vkGetDeviceQueue(device, indicies.presentFamily.value(), 0, &presentQueue);
+    vkGetDeviceQueue(device, indicies.transferFamily.value(), 0, &transferQueue);
 }
 
 uint32_t HelloTriangleApplication::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
@@ -1036,46 +1048,64 @@ void HelloTriangleApplication::createFramebuffers() {
     }
 }
 
-void HelloTriangleApplication::createCommandPool() {
+void HelloTriangleApplication::createCommandPools() {
     QueueFamilyIndices queueFamilyIndicies = findQueueFamilies(physicalDevice); 
 
     /* Command Buffers */
     //command buffers must be submitted on one of the device queues (graphics or presentation queues in this case)
     //must only be submitted on a single type of queue
-    //creating commands for drawing, as such these are submitted on the graphics family
-    VkCommandPoolCreateInfo commandPoolInfo{}; 
-    commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO; 
-    commandPoolInfo.queueFamilyIndex = queueFamilyIndicies.graphicsFamily.value(); 
+    //creating commands for drawing, as such these are submitted on the graphics family 
     /* Two possible flags for command pools: 
         1.VK_COMMAND_POOL_CREATE_TRANSIENT_BIT: warn vulkan that the command pool is changed often 
         2.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT: allow command buffers to be rerecorded individually, without this all command buffers are reset at the same time
     */
-    commandPoolInfo.flags = 0; //optional -- will not be changing or resetting any command buffers 
+    //commandPoolInfo.flags = 0; //optional -- will not be changing or resetting any command buffers 
 
-    if (vkCreateCommandPool(device, &commandPoolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create command pool"); 
-    }
+    //graphics command buffer
+    createPool(queueFamilyIndicies.graphicsFamily.value(), 0, graphicsCommandPool); 
+
+    //command buffer for transfer queue 
+    createPool(queueFamilyIndicies.transferFamily.value(), 0, transferCommandPool); 
+
+    //temporary command pool --unused at this time
+    //createPool(queueFamilyIndicies.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_TRANSIENT_BIT, tempCommandPool); 
 
 }
 
+void HelloTriangleApplication::createPool(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags, VkCommandPool& pool)
+{
+    QueueFamilyIndices queueFamilyIndicies = findQueueFamilies(physicalDevice); 
+
+    VkCommandPoolCreateInfo commandPoolInfo{}; 
+    commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO; 
+    commandPoolInfo.queueFamilyIndex = queueFamilyIndex; 
+    commandPoolInfo.flags = flags; 
+
+    if (vkCreateCommandPool(device, &commandPoolInfo, nullptr, &pool) != VK_SUCCESS) {
+        throw std::runtime_error("unable to create pool"); 
+    }
+}
+
+
 void HelloTriangleApplication::createCommandBuffers() {
-    commandBuffers.resize(swapChainFramebuffers.size()); 
+    /* Graphics Command Buffer */
+    graphicsCommandBuffers.resize(swapChainFramebuffers.size()); 
 
     VkCommandBufferAllocateInfo allocInfo{}; 
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO; 
-    allocInfo.commandPool = commandPool; 
+    allocInfo.commandPool = graphicsCommandPool; 
     // .level - specifies if the allocated command buffers are primay or secondary
     // ..._PRIMARY : can be submitted to a queue for execution, but cannot be called from other command buffers
     // ..._SECONDARY : cannot be submitted directly, but can be called from primary command buffers (good for reuse of common operations)
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; 
-    allocInfo.commandBufferCount = (uint32_t)commandBuffers.size(); 
+    allocInfo.commandBufferCount = (uint32_t)graphicsCommandBuffers.size(); 
 
-    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(device, &allocInfo, graphicsCommandBuffers.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate command buffers");
     }
 
     /* Begin command buffer recording */
-    for (size_t i = 0; i < commandBuffers.size(); i++) {
+    for (size_t i = 0; i < graphicsCommandBuffers.size(); i++) {
         VkCommandBufferBeginInfo beginInfo{}; 
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO; 
 
@@ -1093,7 +1123,7 @@ void HelloTriangleApplication::createCommandBuffers() {
             commands cannot be added after creation
         */
 
-        if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+        if (vkBeginCommandBuffer(graphicsCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer"); 
         }
 
@@ -1126,17 +1156,17 @@ void HelloTriangleApplication::createCommandBuffers() {
                 //OPTIONS: 
                     //VK_SUBPASS_CONTENTS_INLINE: render pass commands will be embedded in the primary command buffer. No secondary command buffers executed 
                     //VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: render pass commands will be executed from the secondary command buffers
-        vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); 
+        vkCmdBeginRenderPass(graphicsCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); 
 
         /* Drawing Commands */
         //Args: 
             //2. compute or graphics pipeline
             //3. pipeline object
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); 
+        vkCmdBindPipeline(graphicsCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); 
 
         VkBuffer vertexBuffers[] = { vertexBuffer }; 
         VkDeviceSize offsets[] = { 0 }; 
-        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets); 
+        vkCmdBindVertexBuffers(graphicsCommandBuffers[i], 0, 1, vertexBuffers, offsets); 
 
 
         //now create call to draw triangle
@@ -1145,16 +1175,27 @@ void HelloTriangleApplication::createCommandBuffers() {
             //3. instanceCount: used for instanced render, use 1 otherwise
             //4. firstVertex: offset in VBO, defines lowest value of gl_VertexIndex
             //5. firstInstance: offset for instanced rendering, defines lowest value of gl_InstanceIndex
-        vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+        vkCmdDraw(graphicsCommandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
         //can now finis render pass
-        vkCmdEndRenderPass(commandBuffers[i]); 
+        vkCmdEndRenderPass(graphicsCommandBuffers[i]); 
 
         //record command buffer
-        if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+        if (vkEndCommandBuffer(graphicsCommandBuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer"); 
         }
     }
+
+    /* Transfer Command Buffer */
+    //transferCommandBuffers.resize(swapChainFramebuffers.size()); 
+    //VkCommandBufferAllocateInfo transferAllocInfo{}; 
+    //transferAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO; 
+    //transferAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; 
+    //transferAllocInfo.commandPool = transferCommandPool; 
+    //allocInfo.commandBufferCount = 1; 
+
+    //if (vkAllocateCommandBuffers(device, &transferAllocInfo, &transferCommandBuffers)); 
+
 }
 
 void HelloTriangleApplication::createSemaphores() {
@@ -1199,48 +1240,33 @@ void HelloTriangleApplication::createFenceImageTracking() {
 }
 
 void HelloTriangleApplication::createVertexBuffer() {
-    VkBufferCreateInfo bufferInfo{}; 
+    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO; 
-    bufferInfo.size = sizeof(vertices[0]) * vertices.size(); //size of buffer in bytes
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //purpose of data in buffer
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffers can be owned by specific queue family or shared between them at the same time. This only used for graphics queue
-
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create vertex buffer"); 
-    }
-
-    //need to allocate memory for the buffer object
-    /* VkMemoryRequirements: 
-        1. size - number of required bytes in memory
-        2. alignments - offset in bytes where the buffer begins in the allocated region of memory (depends on bufferInfo.useage and bufferInfo.flags)
-        3. memoryTypeBits - bit fied of the memory types that are suitable for the buffer
-    */
-    VkMemoryRequirements memRequirenments; 
-    vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirenments);
-
-    VkMemoryAllocateInfo allocInfo{}; 
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO; 
-    allocInfo.allocationSize = memRequirenments.size; 
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirenments.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); 
-
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
-        throw std::runtime_error("failed to allocate vertex buffer memory"); 
-    }
-
-    //4th argument: offset within the region of memory. Since memory is allocated specifically for this vertex buffer, the offset is 0
-    //if not 0, required to be divisible by memRequirenments.alignment
-    vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0); 
-
+    VkBuffer stagingBuffer; 
+    VkDeviceMemory stagingBufferMemory; 
+    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+    
     /* Filling the vertex buffer */
     void* data; 
 
     //access a region of the specified memory recourse defined by an offset and size 
     //can also specify VK_WHOLE_SIZE to map all memory 
     //currrently no memory flags available in API (time of writing) so must be set to 0
-    vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data); 
-    memcpy(data, vertices.data(), (size_t)bufferInfo.size); //simply copy data into mapped memory
-    vkUnmapMemory(device, vertexBufferMemory); //unmap memory
+    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data); 
+    memcpy(data, vertices.data(), (size_t)bufferSize); //simply copy data into mapped memory
+    vkUnmapMemory(device, stagingBufferMemory); //unmap memory
+
+    /* Staging Buffer */
+    //New flags 
+        //VK_BUFFER_USAGE_TRANSFER_SRC_BIT: buffer can be used as source in a memory transfer 
+        //VK_BUFFER_USAGE_TRANSFER_DST_BIT: buffer can be used as destination in a memory transfer 
+    createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory); 
+
+    copyBuffer(stagingBuffer, vertexBuffer, bufferSize); //actually call to copy memory
+
+    //cleanup 
+    vkDestroyBuffer(device, stagingBuffer, nullptr); 
+    vkFreeMemory(device, stagingBufferMemory, nullptr); 
 
     /* Memory Copy Note */
     //note: driver might not immediately copy the data into the buffer memory, ex: caching
@@ -1251,8 +1277,90 @@ void HelloTriangleApplication::createVertexBuffer() {
     //this project used (1) memory always matches but might lead to slightly worse performance 
     //Flushing memory ranges or using coherent calls does not mean they are passed to GPU. Vulkan does this in the background and memory is guaranteed to be on
         //on GPU before next call to vkQueueSubmit
-
 }
+
+void HelloTriangleApplication::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
+{
+    VkBufferCreateInfo bufferInfo{};
+
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = size; 
+    bufferInfo.usage = usage; //purpose of data in buffer
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffers can be owned by specific queue family or shared between them at the same time. This only used for graphics queue
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        throw std::runtime_error("failed to create buffer");
+    }
+
+    //need to allocate memory for the buffer object
+    /* VkMemoryRequirements:
+        1. size - number of required bytes in memory
+        2. alignments - offset in bytes where the buffer begins in the allocated region of memory (depends on bufferInfo.useage and bufferInfo.flags)
+        3. memoryTypeBits - bit fied of the memory types that are suitable for the buffer
+    */
+    VkMemoryRequirements memRequirenments;
+    vkGetBufferMemoryRequirements(device, buffer, &memRequirenments);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirenments.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirenments.memoryTypeBits, properties);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate buffer memory");
+    }
+
+    //4th argument: offset within the region of memory. Since memory is allocated specifically for this vertex buffer, the offset is 0
+    //if not 0, required to be divisible by memRequirenments.alignment
+    vkBindBufferMemory(device, buffer, bufferMemory, 0);
+}
+
+void HelloTriangleApplication::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+{
+    //allocate using temporary command pool
+    VkCommandBufferAllocateInfo allocInfo{}; 
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO; 
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; 
+    allocInfo.commandPool = transferCommandPool; 
+    allocInfo.commandBufferCount = 1; 
+
+    VkCommandBuffer transferBuffer; 
+    vkAllocateCommandBuffers(device, &allocInfo, &transferBuffer);
+
+    VkCommandBufferBeginInfo beginInfo{}; 
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO; 
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //only planning on using this command buffer once 
+
+    vkBeginCommandBuffer(transferBuffer, &beginInfo);
+
+    VkBufferCopy copyRegion{}; 
+    copyRegion.srcOffset = 0; 
+    copyRegion.dstOffset = 0; 
+    copyRegion.size = size; 
+    //note: cannot specify VK_WHOLE_SIZE as before 
+    vkCmdCopyBuffer(transferBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+    vkEndCommandBuffer(transferBuffer);
+
+    //Execute command buffer
+    VkSubmitInfo submitInfo{}; 
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO; 
+    submitInfo.commandBufferCount = 1; 
+    submitInfo.pCommandBuffers = &transferBuffer;
+
+    vkQueueSubmit(transferQueue, 1, &submitInfo, VK_NULL_HANDLE); 
+
+    /*Note about waiting for complete*/
+    /*Can be done two ways 
+    *   1. Fences --more optimized and let you do multiple transfers at once 
+    *   2. Wait for buffer to become idle     
+    */
+    vkQueueWaitIdle(transferQueue);
+
+    //cleanup 
+    vkFreeCommandBuffers(device, transferCommandPool, 1, &transferBuffer);
+}
+
 
 #pragma region Unused Functions
 /* LEFT FOR FUTURE NOTE

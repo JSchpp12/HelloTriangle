@@ -109,9 +109,10 @@ private:
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;
+        std::optional<uint32_t> transferFamily; 
 
         bool isComplete() {
-            return graphicsFamily.has_value() && presentFamily.has_value();
+            return graphicsFamily.has_value() && presentFamily.has_value() && transferFamily.has_value();
         }
     };
 
@@ -131,8 +132,11 @@ private:
     std::vector<VkSemaphore> renderFinishedSemaphores; 
 
     //vulkan command storage
-    VkCommandPool commandPool;
-    std::vector<VkCommandBuffer> commandBuffers; 
+    VkCommandPool graphicsCommandPool;
+    std::vector<VkCommandBuffer> graphicsCommandBuffers; 
+    VkCommandPool transferCommandPool; 
+    std::vector<VkCommandBuffer> transferCommandBuffers;
+    VkCommandPool tempCommandPool; //command pool for temporary use in small operations
 
     //buffer and memory information storage
     VkBuffer vertexBuffer;
@@ -142,8 +146,12 @@ private:
     VkPipeline graphicsPipeline; 
     VkRenderPass renderPass; 
     VkPipelineLayout pipelineLayout;
+
+    //queue family
     VkQueue graphicsQueue;
     VkQueue presentQueue;
+    VkQueue transferQueue; 
+
     GLFWwindow* window;
     VkInstance instance;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -307,7 +315,10 @@ private:
     /// <summary>
     /// Create command pools which will contain all predefined draw commands for later use in vulkan main loop
     /// </summary>
-    void createCommandPool(); 
+    void createCommandPools(); 
+
+    
+    void createPool(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags, VkCommandPool &pool); 
 
     /// <summary>
     /// Allocate and record the commands for each swapchain image
@@ -333,6 +344,19 @@ private:
     /// Create a vertex buffer to hold the vertex information that will be passed to the GPU. 
     /// </summary>
     void createVertexBuffer(); 
+
+    /// <summary>
+    /// Create a buffer with the given arguments
+    /// </summary>
+    void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory); 
+
+    /// <summary>
+    /// Copy data from one buffer to another
+    /// </summary>
+    /// <param name="srcBuffer">Buffer that will act as the source in the transfer</param>
+    /// <param name="dstBuffer">Buffer that will be the destination of the transfer</param>
+    /// <param name="size">Size of the data to be copied</param>
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size); 
 
     static std::vector<char> readFile(const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
